@@ -35,40 +35,6 @@ jobs:
         echo -e "$(sudo lshw -short -C memory | grep GiB) \n"
         echo "--------------------------硬盘信息--------------------------"
         echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
-
-    - name: Clean Disk Space Before Build(构建前清理磁盘空间)
-      run: |
-        echo "=== 构建前磁盘空间清理 ==="
-        df -hT
-        
-        # 停止可能存在的编译进程
-        sudo pkill -f "make|gcc" || true
-        sleep 3
-        
-        # 清理系统缓存
-        sudo apt-get clean
-        sudo apt-get autoremove -y
-        sudo apt-get autoclean
-        
-        # 清理临时文件
-        sudo rm -rf /tmp/*
-        sudo rm -rf /var/tmp/*
-        sudo rm -rf ~/.cache/*
-        
-        # 清理日志文件
-        sudo journalctl --vacuum-time=1h 2>/dev/null || true
-        sudo find /var/log -name "*.gz" -delete 2>/dev/null || true
-        sudo find /var/log -name "*.old" -delete 2>/dev/null || true
-        
-        # 清理大型开发工具缓存
-        sudo rm -rf /usr/local/lib/android 2>/dev/null || true
-        sudo rm -rf /usr/share/dotnet 2>/dev/null || true
-        sudo rm -rf /opt/ghc 2>/dev/null || true
-        sudo rm -rf /opt/hostedtoolcache 2>/dev/null || true
-        
-        echo "=== 清理后磁盘空间 ==="
-        df -hT
-
     - name: Initialization Environment(初始化环境)
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -81,7 +47,6 @@ jobs:
         sudo -E apt -yqq clean
         sudo -E systemctl daemon-reload
         sudo timedatectl set-timezone "$TZ"
-
     - name: Combine Disks(合并磁盘)
       uses: easimon/maximize-build-space@master
       with:
@@ -94,7 +59,6 @@ jobs:
 
     - name: Clone Source Code(克隆源代码)
       run: |
-        echo "=== 克隆前磁盘空间 ==="
         df -hT $GITHUB_WORKSPACE
         git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
         cd openwrt
@@ -103,9 +67,6 @@ jobs:
         echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
         VERSION_KERNEL=$(grep -oP 'LINUX_KERNEL_HASH-\K[0-9]+\.[0-9]+\.[0-9]+' target/linux/generic/kernel-6.12)
         echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
-        echo "=== 克隆后磁盘空间 ==="
-        df -hT
-
     - name: Generate Variables(生成变量)
       run: |
         cp $CONFIG_FILE $OPENWRT_PATH/.config
@@ -117,7 +78,6 @@ jobs:
         echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
         DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
         echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
-
     - name: Cache Toolchain(缓存工具链)
       if: env.CACHE_TOOLCHAIN == 'true'
       uses: HiGarfield/cachewrtbuild@main
@@ -139,7 +99,6 @@ jobs:
         chmod +x $DIY_SCRIPT
         cd $OPENWRT_PATH
         $GITHUB_WORKSPACE/$DIY_SCRIPT
-
     - name: Download DL Package(下载DL软件包)
       run: |
         cd $OPENWRT_PATH
@@ -147,9 +106,6 @@ jobs:
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
-        echo "=== 下载后磁盘空间 ==="
-        df -hT
-
     - name: Compile Firmware(开始编译固件)
       id: compile
       run: |
@@ -159,24 +115,6 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
         echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
         echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
-
-    - name: Clean Disk Space After Build(构建后清理磁盘)
-      if: always()  # 即使构建失败也执行清理
-      run: |
-        echo "=== 构建后磁盘清理 ==="
-        cd $OPENWRT_PATH
-        
-        # 清理 OpenWrt 编译临时文件
-        make dirclean 2>/dev/null || true
-        sudo rm -rf ./build_dir ./tmp ./staging_dir ./logs ./dl/* 2>/dev/null || true
-        
-        # 再次清理系统缓存
-        sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
-        
-        echo "=== 最终磁盘空间 ==="
-        df -hT
-
     - name: Check Space Usage(检查空间使用情况)
       if: (!cancelled())
       run: df -hT
@@ -199,7 +137,6 @@ jobs:
         tar -zcf Packages.tar.gz packages
         rm -rf packages feeds.buildinfo version.buildinfo
         echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
-
     - name: Upload Firmware To Artifact(将固件上传到Artifact)
       if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE != 'true'
       uses: actions/upload-artifact@main
